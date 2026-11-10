@@ -1,0 +1,50 @@
+# helmreview web UI as a systemd service on a Docker host.
+# (On RHEL/Fedora with Podman, use helmreview.container instead.)
+#
+#   sudo mkdir -p /etc/helmreview
+#   sudo install -m 600 helmreview.env.example /etc/helmreview/helmreview.env   # set the token
+#   sudo cp helmreview-docker.service /etc/systemd/system/helmreview.service
+#   sudo systemctl edit helmreview      # optional: change REPOS, RUN_AS, PORT (see below)
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now helmreview
+#
+# Then open http://localhost:8766/?token=<HELMREVIEW_WEB_TOKEN>.
+# Logs: journalctl -u helmreview -f       Update: sudo systemctl restart helmreview
+
+[Unit]
+Description=helmreview: review Helm charts with helm lint and a local Ollama model
+Documentation=https://github.com/jwklijnsma/helmreview
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+# Change these with `systemctl edit helmreview`:
+#   REPOS   folder with the repositories to review
+#   RUN_AS  uid:gid that owns REPOS, so reports and fixes are written as that user
+#   PORT    port on 127.0.0.1
+Environment=IMAGE=ghcr.io/jwklijnsma/helmreview:latest
+Environment=REPOS=/srv/charts
+Environment=RUN_AS=1000:1000
+Environment=PORT=8766
+
+# Pull the newest image on every (re)start; keep going on the cached one when offline.
+ExecStartPre=-/usr/bin/docker pull ${IMAGE}
+ExecStartPre=-/usr/bin/docker rm -f helmreview
+ExecStart=/usr/bin/docker run --rm --name helmreview \
+  -p 127.0.0.1:${PORT}:8766 \
+  --add-host=host.docker.internal:host-gateway \
+  --user ${RUN_AS} \
+  --security-opt no-new-privileges --cap-drop ALL \
+  -v ${REPOS}:/repos \
+  -v helmreview-data:/home/helmreview/.cache/helmreview \
+  --env-file /etc/helmreview/helmreview.env \
+  ${IMAGE}
+# SIGINT (the image's stop signal) lets running jobs stop cleanly.
+ExecStop=/usr/bin/docker stop -t 30 helmreview
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

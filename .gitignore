@@ -1,0 +1,10 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/
+build/
+dist/
+.helmreview/
+
+# web UI (React); the built bundle in src/helmreview/web/static/ IS committed
+web/node_modules/

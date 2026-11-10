@@ -1,0 +1,193 @@
+name: docker
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+  # Called by the release workflow: a tag pushed with GITHUB_TOKEN does not start
+  # other workflows, so the release builds its image through this instead.
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref or commit to build
+        type: string
+        required: true
+      version:
+        description: Release version X.Y.Z, tagged as X.Y.Z and X.Y
+        type: string
+        required: false
+      dry_run:
+        description: Build and test, push nothing
+        type: boolean
+        default: false
+
+concurrency:
+  group: docker-${{ inputs.ref || github.ref }}
+  # Never cancel a publish half-way; superseded PR runs can go.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/helmreview
+  PLATFORMS: linux/amd64,linux/arm64
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      # The commit actually checked out; github.sha is the caller's when this is called.
+      - id: rev
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}},value=v${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=sha-${{ steps.rev.outputs.short }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
+
+      # 1. Build for amd64 only and load it, so the smoke test runs the real image.
+      - name: Build test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: helmreview:test
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ steps.rev.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test - CLI scan
+        run: |
+          set -euo pipefail
+          docker run --rm helmreview:test --version
+          cp -r examples/sample-repo "$RUNNER_TEMP/sample"
+          set +e
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$RUNNER_TEMP/sample:/repos/sample" \
+            helmreview:test scan /repos/sample --no-llm
+          rc=$?
+          set -e
+          echo "scan exit code: $rc"
+          test "$rc" -le 1   # 0 = clean, 1 = findings; 2+ = the tool failed
+          python3 - "$RUNNER_TEMP/sample/.helmreview/report.json" <<'EOF'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          rules = {f["rule"] for f in r["findings"]}
+          errors = " ".join(r.get("errors") or [])
+          print(f"{len(r['findings'])} findings, rules: {sorted(rules)}")
+          assert "HR001" in rules, "static checks did not run"
+          assert "HR002" in rules, "charts were not rendered (helm template)"
+          assert any(x.startswith("helm-lint") for x in rules), "helm lint did not run"
+          assert "helm not found" not in errors, f"helm missing in the image: {errors}"
+          EOF
+
+      - name: Smoke test - web UI
+        run: |
+          set -euo pipefail
+          docker run -d --name helmreview -p 127.0.0.1:8766:8766 \
+            --user "$(id -u):$(id -g)" \
+            --health-interval=2s --health-start-period=2s \
+            -e HELMREVIEW_WEB_TOKEN=ci-token \
+            -v "$RUNNER_TEMP/sample:/repos/sample" \
+            helmreview:test
+          for i in $(seq 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' helmreview)" = healthy ] && break
+            sleep 1
+          done
+          docker inspect -f 'health: {{.State.Health.Status}}' helmreview
+          test "$(docker inspect -f '{{.State.Health.Status}}' helmreview)" = healthy
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8766/api/repos)" = 401
+          curl -fsS -H "Authorization: Bearer ci-token" http://127.0.0.1:8766/api/repos | tee /dev/stderr | grep -q '"sample"'
+          # ZIP upload: the upload folder lives in $HOME, which must be writable for any UID.
+          (cd "$RUNNER_TEMP" && python3 -c "import shutil; shutil.make_archive('sample', 'zip', 'sample')")
+          curl -fsS -H "Authorization: Bearer ci-token" -H "X-Helmreview: 1" \
+            -H "Content-Type: application/zip" -H "X-Filename: sample.zip" \
+            --data-binary @"$RUNNER_TEMP/sample.zip" http://127.0.0.1:8766/api/uploads \
+            | tee /dev/stderr | grep -q '"id": "u:'
+          docker stop -t 15 helmreview
+          code="$(docker inspect -f '{{.State.ExitCode}}' helmreview)"
+          echo "exit code after docker stop: $code"
+          test "$code" = 0   # SIGINT reached helmreview through tini and it shut down cleanly
+
+      - name: Container logs
+        if: always()
+        run: docker logs helmreview 2>&1 || true
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request' && !inputs.dry_run
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. Multi-arch build (amd64 comes from the cache above); pushed except on PRs and dry runs.
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ github.event_name != 'pull_request' && !inputs.dry_run }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ steps.rev.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      - name: Summary
+        if: github.event_name != 'pull_request'
+        run: |
+          {
+            if [ "${{ inputs.dry_run }}" = true ]; then echo "### Dry run: built, not pushed"; else echo "### Published"; fi
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,67 @@
+# helmreview web UI as a rootful Podman Quadlet (system service, started at boot).
+# For the rootless variant (your own user, ~/git) use helmreview.container.
+#
+#   openssl rand -hex 24 | tr -d '\n' | sudo podman secret create helmreview-token -
+#   sudo mkdir -p /etc/helmreview
+#   sudo install -m 600 helmreview.env.example /etc/helmreview/helmreview.env   # optional settings
+#   sudo cp helmreview-rootful.container /etc/containers/systemd/helmreview.container
+#   # edit the Volume= path and User=/Group= below, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl start helmreview
+#   sudo systemctl enable --now podman-auto-update.timer    # daily image updates
+#
+# Logs: journalctl -u helmreview -f
+# Token: sudo podman secret inspect --showsecret --format '{{.SecretData}}' helmreview-token
+# (No keep-id here: that only exists for rootless Podman. The [Install] section
+#  makes it start at boot; `systemctl enable` is not needed for Quadlets.)
+
+[Unit]
+Description=helmreview: review Helm charts with helm lint and a local Ollama model
+Documentation=https://github.com/jwklijnsma/helmreview
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+ContainerName=helmreview
+Image=ghcr.io/jwklijnsma/helmreview:latest
+AutoUpdate=registry
+PublishPort=127.0.0.1:8766:8766
+
+# The folder with the repositories to review (must exist). :z relabels for SELinux.
+Volume=/srv/charts:/repos:z
+# ZIP uploads survive restarts and updates.
+Volume=helmreview-data:/home/helmreview/.cache/helmreview:U
+
+# Run as the owner of that folder (see `stat -c '%u:%g' /srv/charts`), so reports
+# and fixes are written as that user and never as root.
+User=1000
+Group=1000
+# No user namespace: with one (keep-id, or userns=auto in containers.conf) rootful
+# Podman must make an ID-mapped copy of the image, which fails on many hosts
+# ("creating an ID-mapped copy of layer", exit 125), e.g. in LXC.
+UserNS=host
+
+# The access token, from the Podman secret created above.
+Secret=helmreview-token,type=env,target=HELMREVIEW_WEB_TOKEN
+# Optional settings (model, context size, language); `-` = fine if it is missing.
+EnvironmentFile=-/etc/helmreview/helmreview.env
+# Ollama on this host (it must listen on more than 127.0.0.1). For Ollama on another
+# machine, change this line.
+Environment=OLLAMA_HOST=http://host.containers.internal:11434
+
+NoNewPrivileges=true
+DropCapability=all
+
+HealthCmd=python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/', timeout=4)"
+HealthInterval=30s
+HealthStartPeriod=10s
+StopSignal=SIGINT
+StopTimeout=30
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

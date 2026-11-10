@@ -1,0 +1,28 @@
+# Add to your chart repo's .gitlab-ci.yml.
+# Needs a runner that can reach your Ollama server; set OLLAMA_HOST as a CI/CD variable.
+# The image has helm, git and helmreview; it runs as a non-root user.
+
+helmreview:
+  stage: test
+  image:
+    name: ghcr.io/jwklijnsma/helmreview:latest
+    entrypoint: [""]
+  variables:
+    HELMREVIEW_MODEL: "qwen2.5-coder:14b"
+    GIT_DEPTH: "0"            # diff mode needs history
+  script:
+    - |
+      if [ -n "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" ]; then
+        git fetch -q origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+        helmreview --diff "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" -f md,gitlab -o .helmreview
+      else
+        helmreview -f md,gitlab -o .helmreview
+      fi
+  artifacts:
+    when: always
+    paths: [.helmreview/report.md]
+    reports:
+      codequality: .helmreview/gl-code-quality-report.json
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

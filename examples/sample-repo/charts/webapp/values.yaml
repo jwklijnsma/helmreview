@@ -1,0 +1,29 @@
+replicaCount: 2
+
+image:
+  repository: registry.example.com/webapp
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: NodePort
+  port: 80
+
+database:
+  host: db.example.com
+  user: webapp
+  password: Sup3rS3cret!
+  # an existing Secret is the right way; this one is fine
+  existingSecret: ""
+
+# a template placeholder, not a secret
+apiToken: "{{ .Values.global.token }}"
+
+ingress:
+  enabled: true
+  host: webapp.example.com
+
+nodeSelector: {}
+
+redis:
+  enabled: false
