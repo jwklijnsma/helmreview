@@ -1,4 +1,5 @@
 # helmreview web UI as a Podman Quadlet (RHEL 9/10, Fedora, any Podman >= 4.4).
+# Easiest: `./install.sh` in this folder does all the steps below (see install.sh --help).
 #
 # Rootless, as the user who owns the repositories (recommended):
 #   openssl rand -hex 24 | tr -d '\n' | podman secret create helmreview-token -

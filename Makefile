@@ -6,7 +6,7 @@ IMAGE  ?= helmreview:dev
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install test serve docker version web web-dev web-test release release-patch release-minor release-major release-dry-run
+.PHONY: help install test serve docker version web web-dev web-test release release-patch release-minor release-major release-dry-run install-service
 
 help: ## show this list
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-16s %s\n", $$1, $$2}'
@@ -21,6 +21,9 @@ test: ## run the test suite
 
 serve: ## start the web UI for the repos in ../
 	$(PYTHON) -m helmreview serve --root .. --open
+
+install-service: ## install the web UI as a systemd service with Podman Quadlet (ARGS="--lan --repos DIR")
+	deploy/systemd/install.sh $(ARGS)
 
 web: ## build the React UI into src/helmreview/web/static (commit the result)
 	cd web && npm ci && npm run build
