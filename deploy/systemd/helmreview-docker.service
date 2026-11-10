@@ -2,7 +2,7 @@
 # (On RHEL/Fedora with Podman, use helmreview.container instead.)
 #
 #   sudo mkdir -p /etc/helmreview
-#   sudo install -m 600 helmreview.env.example /etc/helmreview/helmreview.env   # set the token
+#   sudo install -m 600 helmreview.env.example /etc/helmreview/helmreview.env   # uncomment and set HELMREVIEW_WEB_TOKEN
 #   sudo cp helmreview-docker.service /etc/systemd/system/helmreview.service
 #   sudo systemctl edit helmreview      # optional: change REPOS, RUN_AS, PORT (see below)
 #   sudo systemctl daemon-reload

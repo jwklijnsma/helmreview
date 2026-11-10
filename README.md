@@ -191,15 +191,16 @@ Ollama URL (the previous unit is kept as `.bak`); `--new-token` rotates the toke
 
 ```bash
 openssl rand -hex 24 | tr -d '\n' | podman secret create helmreview-token -   # the access token
-mkdir -p ~/.config/containers/systemd
+mkdir -p ~/.config/containers/systemd ~/.config/helmreview
 cp deploy/systemd/helmreview.container ~/.config/containers/systemd/
+install -m 600 deploy/systemd/helmreview.env.example ~/.config/helmreview/helmreview.env   # must exist
 systemctl --user daemon-reload
 systemctl --user start helmreview
 loginctl enable-linger "$USER"                           # keeps running without a login
 systemctl --user enable --now podman-auto-update.timer   # pulls new images daily
 ```
 
-Show the token again with `podman secret inspect --showsecret --format '{{.SecretData}}' helmreview-token`. Optional settings (model, context size) go in `~/.config/helmreview/helmreview.env`, see `helmreview.env.example`. The repositories come from `~/git`; change the `Volume=%h/git:/repos:z` line for another folder. Reports and fixes stay owned by you (`UserNS=keep-id`). Ollama on the same host is reached as `host.containers.internal`, so it must listen on more than 127.0.0.1 (`systemctl edit ollama` → `Environment=OLLAMA_HOST=0.0.0.0`). For Ollama on another machine, change the unit's `Environment=OLLAMA_HOST=` line.
+Show the token again with `podman secret inspect --showsecret --format '{{.SecretData}}' helmreview-token`. Settings (model, context size) go in `~/.config/helmreview/helmreview.env`; the file must exist, an unchanged copy of `helmreview.env.example` is fine. The repositories come from `~/git`; change the `Volume=%h/git:/repos:z` line for another folder. Reports and fixes stay owned by you (`UserNS=keep-id`). Ollama on the same host is reached as `host.containers.internal`, so it must listen on more than 127.0.0.1 (`systemctl edit ollama` → `Environment=OLLAMA_HOST=0.0.0.0`). For Ollama on another machine, change the unit's `Environment=OLLAMA_HOST=` line.
 
 As a system service run by root instead (in `/etc/containers/systemd/`), use [`helmreview-rootful.container`](deploy/systemd/helmreview-rootful.container); its header has the steps.
 
@@ -207,7 +208,7 @@ As a system service run by root instead (in `/etc/containers/systemd/`), use [`h
 
 ```bash
 sudo mkdir -p /etc/helmreview
-sudo install -m 600 deploy/systemd/helmreview.env.example /etc/helmreview/helmreview.env   # set the token
+sudo install -m 600 deploy/systemd/helmreview.env.example /etc/helmreview/helmreview.env   # uncomment and set the token
 sudo cp deploy/systemd/helmreview-docker.service /etc/systemd/system/helmreview.service
 sudo systemctl edit helmreview     # REPOS=/path/to/repos, RUN_AS=uid:gid of their owner
 sudo systemctl enable --now helmreview
