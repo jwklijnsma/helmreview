@@ -1,4 +1,5 @@
 # helmreview web UI as a rootful Podman Quadlet (system service, started at boot).
+# Easiest: `sudo ./install.sh` in this folder does all the steps below (see install.sh --help).
 # For the rootless variant (your own user, ~/git) use helmreview.container.
 #
 #   openssl rand -hex 24 | tr -d '\n' | sudo podman secret create helmreview-token -

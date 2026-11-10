@@ -168,7 +168,26 @@ Pull the model once with `docker compose exec ollama ollama pull qwen2.5-coder:1
 
 Ready-made units are in [`deploy/systemd/`](deploy/systemd/). They start the container at boot, restart it on failure, log to the journal and keep uploads in a volume.
 
-**Podman (RHEL, Fedora): Quadlet, rootless, as the user who owns the repos**
+**Podman (RHEL, Fedora): one command**
+
+```bash
+sudo deploy/systemd/install.sh                 # system service, starts at boot, repos in /srv/charts
+deploy/systemd/install.sh                      # or rootless, as yourself, repos in ~/git
+sudo deploy/systemd/install.sh --repos /srv/git --lan --model qwen3-coder:30b --ollama http://gpu-box:11434
+make install-service ARGS="--lan"              # the same from the Makefile
+```
+
+Without a checkout: `curl -fsSL https://raw.githubusercontent.com/jwklijnsma/helmreview/main/deploy/systemd/install.sh | sudo bash -s -- --lan`.
+
+It creates the access token as a Podman secret, writes the settings file
+(`/etc/helmreview/helmreview.env`, or `~/.config/helmreview/` rootless) and the Quadlet unit,
+runs the container as the owner of the repos folder, starts the service, waits until it
+answers and prints the link with the token. Run it again to change the folder, port, model or
+Ollama URL (the previous unit is kept as `.bak`); `--new-token` rotates the token and
+`--uninstall` removes the service. Images update daily through `podman-auto-update.timer`.
+
+**Podman by hand: Quadlet, rootless, as the user who owns the repos**
+
 
 ```bash
 openssl rand -hex 24 | tr -d '\n' | podman secret create helmreview-token -   # the access token
