@@ -1,4 +1,6 @@
 # helmreview web UI as a Podman Quadlet (RHEL 9/10, Fedora, any Podman >= 4.4).
+# ROOTLESS ONLY: put it in ~/.config/containers/systemd/, never in /etc/containers/systemd/.
+# As root it fails with exit 125 ("ID-mapped copy of layer"); use helmreview-rootful.container there.
 # Easiest: `./install.sh` in this folder does all the steps below (see install.sh --help).
 #
 # Rootless, as the user who owns the repositories (recommended):
