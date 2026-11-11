@@ -44,6 +44,9 @@ UserNS=host
 
 # The access token, from the Podman secret created above.
 Secret=helmreview-token,type=env,target=HELMREVIEW_WEB_TOKEN
+# GitLab token for merge-request reviews (optional; switch them on in the env file):
+#   printf %s 'glpat-...' | podman secret create helmreview-gitlab-token -
+#Secret=helmreview-gitlab-token,type=env,target=GITLAB_TOKEN
 # Settings (model, Ollama URL, ...). The file must exist: Quadlet hands this path to
 # `podman --env-file`, which has no "optional" form. An unchanged copy of the example is fine.
 EnvironmentFile=/etc/helmreview/helmreview.env

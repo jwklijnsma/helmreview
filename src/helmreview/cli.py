@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from fnmatch import fnmatch
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -40,6 +41,12 @@ disabled_rules: []              # e.g. [HR009, helm-lint:icon]
 exclude:
   - ".git/**"
   - "**/charts/*.tgz"
+
+# Review GitLab merge requests (`helmreview watch-mrs`); only honoured from ~/.helmreview.yml.
+# The token comes from $GITLAB_TOKEN (scope: api).
+# gitlab_url: https://gitlab.example.nl
+# gitlab_projects: [platform/charts]
+# gitlab_groups: []
 
 house_rules: |
   - Every value in values.yaml has a comment explaining it.
@@ -407,14 +414,75 @@ def cmd_fix(a: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _apply_gitlab_cli(cfg: Config, a: argparse.Namespace):
+    if getattr(a, "gitlab_url", None):
+        cfg.gitlab_url = a.gitlab_url
+    if getattr(a, "project", None):
+        cfg.gitlab_projects = list(a.project)
+    if getattr(a, "group", None):
+        cfg.gitlab_groups = list(a.group)
+    if getattr(a, "interval", None):
+        cfg.gitlab_interval = a.interval
+    if getattr(a, "skip_drafts", False):
+        cfg.gitlab_skip_drafts = True
+    if getattr(a, "skip_forks", False):
+        cfg.gitlab_skip_forks = True
+
+
+def cmd_watch_mrs(a: argparse.Namespace) -> int:
+    """Poll GitLab for open merge requests and review each new head commit."""
+    from .gitlab import watcher_from_config
+
+    # Settings come from ~/.helmreview.yml, the environment and flags: never from a repo.
+    cfg, warnings = load_config(Path(os.devnull), Path(a.config) if a.config else None)
+    _apply_cli(cfg, a)
+    _apply_gitlab_cli(cfg, a)
+    say = _progress(False)
+    for w in warnings:
+        say(f"warning: {w}")
+    scan_args = []
+    for flag, val in (("--model", a.model), ("--host", a.host), ("--config", a.config),
+                      ("--lang", a.lang)):
+        if val:
+            scan_args.append(f"{flag}={val}")
+    if a.no_llm:
+        scan_args.append("--no-llm")
+    try:
+        watcher = watcher_from_config(
+            cfg, state_dir=Path(a.state_dir) if a.state_dir else None,
+            dry_run=a.dry_run, say=say, scan_args=lambda: list(scan_args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    targets = ", ".join(watcher.projects + [g + "/*" for g in watcher.groups])
+    say(f"helmreview {__version__}: watching merge requests of {targets} on {watcher.gitlab.url}")
+    if a.once or a.dry_run:
+        stats = watcher.poll_once()
+        say(f"{stats['open']} open, {stats['reviewed']} reviewed, {stats['failed']} failed, "
+            f"{stats['skipped']} already done or skipped")
+        return EXIT_ERROR if stats["failed"] else EXIT_OK
+    say(f"polling every {watcher.interval}s (Ctrl-C stops)")
+    watcher.run_forever()
+    return EXIT_OK
+
+
 def cmd_serve(a: argparse.Namespace) -> int:
     from .web import serve
     roots = [Path(r) for r in (a.root or ["."])]
+    watcher = None
+    if a.watch_mrs or os.environ.get("HELMREVIEW_WATCH_MRS", "").lower() in ("1", "true", "yes", "on"):
+        from .gitlab import watcher_from_config
+        cfg, _ = load_config(Path(os.devnull))
+        try:
+            watcher = watcher_from_config(cfg)
+        except ValueError as exc:
+            print(f"error: --watch-mrs: {exc}", file=sys.stderr)
+            return EXIT_ERROR
     return serve(roots, bind=a.bind, port=a.port, token=a.token, no_auth=a.no_auth,
                  open_browser=a.open, verbose=a.verbose,
                  upload_dir=Path(a.upload_dir) if a.upload_dir else None,
                  no_upload=a.no_upload, max_upload_mb=a.max_upload_mb,
-                 upload_keep_days=a.upload_keep_days)
+                 upload_keep_days=a.upload_keep_days, mr_watcher=watcher)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -519,14 +587,42 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--upload-keep-days", type=float, default=7, metavar="DAYS",
                    help="delete uploads older than this (default 7, 0 = keep)")
     w.add_argument("--no-upload", action="store_true", help="switch ZIP uploads off")
+    w.add_argument("--watch-mrs", action="store_true",
+                   help="also review GitLab merge requests in the background (settings: "
+                        "gitlab_* in ~/.helmreview.yml or $HELMREVIEW_GITLAB_*; same as "
+                        "$HELMREVIEW_WATCH_MRS=1)")
     w.set_defaults(func=cmd_serve)
+
+    g = sub.add_parser("watch-mrs",
+                       help="review GitLab merge requests as they come in and comment on them")
+    g.add_argument("-c", "--config", help="extra config file")
+    g.add_argument("-m", "--model", help="Ollama model")
+    g.add_argument("--host", help="Ollama URL, e.g. http://gpu-box:11434")
+    g.add_argument("--gitlab-url", metavar="URL", help="e.g. https://gitlab.example.nl")
+    g.add_argument("--project", action="append", metavar="PATH",
+                   help="project to watch, group/name or id (repeatable)")
+    g.add_argument("--group", action="append", metavar="PATH",
+                   help="watch every project in this group and its subgroups (repeatable)")
+    g.add_argument("--interval", type=int, metavar="SECONDS",
+                   help="seconds between polls (default 120)")
+    g.add_argument("--once", action="store_true", help="poll once and exit (cron, CI)")
+    g.add_argument("--dry-run", action="store_true",
+                   help="only list the merge requests that would be reviewed")
+    g.add_argument("--skip-drafts", action="store_true", help="leave draft merge requests alone")
+    g.add_argument("--skip-forks", action="store_true",
+                   help="leave merge requests from forks alone")
+    g.add_argument("--state-dir", metavar="DIR",
+                   help="checkouts and what was reviewed (default ~/.cache/helmreview/mr)")
+    g.add_argument("--lang", choices=["en", "nl"], help="language of the comment")
+    g.add_argument("--no-llm", action="store_true", help="skip the Ollama review")
+    g.set_defaults(func=cmd_watch_mrs)
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or (argv[0] not in {"scan", "fix", "doctor", "rules", "init", "serve",
-                                    "-h", "--help", "--version"}):
+                                    "watch-mrs", "-h", "--help", "--version"}):
         argv.insert(0, "scan")
     args = build_parser().parse_args(argv)
     try:

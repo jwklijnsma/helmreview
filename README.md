@@ -44,6 +44,7 @@ helmreview --diff origin/main                # only review what changed (for MRs
 helmreview --only charts/keycloak            # one chart
 helmreview --no-llm                          # just helm lint + HR checks (fast)
 helmreview serve --root ~/git                # web UI (see below)
+helmreview watch-mrs --project platform/charts  # review GitLab merge requests as they come in
 helmreview -f md,json,sarif,gitlab -o out/   # pick report formats and folder
 ```
 
@@ -113,6 +114,53 @@ The UI is a React app (`web/`), built into `src/helmreview/web/static/` and ship
 **Uploads** are unpacked into `~/.cache/helmreview/uploads` (`--upload-dir`), up to 100 MB per ZIP (`--max-upload-mb`), and deleted after 7 days (`--upload-keep-days`, or the Delete button). Each one becomes its own small git repository, so `fix` works on it. Extraction refuses paths that leave the folder, skips symlinks and any `.git`, and stops ZIP bombs (size, file count and compression ratio are checked on the bytes actually written). Uploaded charts are rendered with `helm template` (no cluster access, no plugins), just like a repo under `--root`. `--no-upload` switches uploads off.
 
 **Security.** By default it listens on `127.0.0.1` only and every API call needs the token (`--token` or `$HELMREVIEW_WEB_TOKEN` to fix it, otherwise a random one per start). Only repositories under the `--root` folders are reachable, and file reads cannot leave a repo. The Ollama host, output folder and config file cannot be set from the browser. POSTs need a custom header, so other sites cannot trigger a scan. `--no-auth` is refused unless you bind to localhost. To reach it from another machine, prefer an SSH tunnel (`ssh -L 8766:localhost:8766 gpu-box`). If you do use `--bind 0.0.0.0`, put it behind a TLS reverse proxy, because the token travels in plain HTTP otherwise.
+
+## GitLab merge requests
+
+Instead of adding a CI job to every repository, let helmreview fetch the merge requests itself.
+It asks GitLab for open merge requests every two minutes, runs a `--diff` scan against the
+target branch for each new commit, and keeps **one comment** per merge request up to date with
+the findings on the changed lines.
+
+```bash
+export GITLAB_TOKEN=glpat-…                 # scope: api
+helmreview watch-mrs --gitlab-url https://gitlab.example.nl \
+    --project platform/charts --group platform/apps     # runs until Ctrl-C
+helmreview watch-mrs … --dry-run             # only list what would be reviewed
+helmreview watch-mrs … --once                # one round, then exit (cron or a scheduled pipeline)
+helmreview serve --root ~/git --watch-mrs    # the web UI and the watcher in one process
+```
+
+With `serve --watch-mrs` (or `HELMREVIEW_WATCH_MRS=1` for the container), merge-request scans wait
+their turn behind the jobs started in the UI and use the model picked there. They do not show
+up in the Jobs list; follow them in the log.
+
+| Setting (`~/.helmreview.yml`) | Environment | Default | |
+|---|---|---|---|
+| `gitlab_url` | `HELMREVIEW_GITLAB_URL` | – | `--gitlab-url` |
+| `gitlab_projects` | `HELMREVIEW_GITLAB_PROJECTS` (comma-separated) | – | `--project`, path or id |
+| `gitlab_groups` | `HELMREVIEW_GITLAB_GROUPS` | – | `--group`; includes subgroups |
+| `gitlab_token_env` | `HELMREVIEW_GITLAB_TOKEN_ENV` | `GITLAB_TOKEN` | name of the variable that holds the token |
+| `gitlab_interval` | `HELMREVIEW_GITLAB_INTERVAL` | `120` | seconds between polls |
+| `gitlab_skip_drafts` / `gitlab_skip_forks` | `HELMREVIEW_GITLAB_SKIP_DRAFTS` / `…_SKIP_FORKS` | `false` | |
+| `gitlab_max_age_days` | – | `14` | merge requests untouched for longer are left alone (`0` = all) |
+
+- **As a scheduled pipeline.** `examples/gitlab-ci.yml` has a ready job: one project with a
+  pipeline schedule reviews the merge requests of all the others.
+- **Token.** A project or group access token with the `api` scope and the Reporter role is
+  enough (it reads the repository and writes a comment). It is only ever read from the
+  environment and is not written to the checkout's git config.
+- **Polling, not a webhook.** Only outgoing HTTPS to GitLab is needed, so this works from a GPU
+  box GitLab cannot reach. With an internal CA, set `REQUESTS_CA_BUNDLE` and `GIT_SSL_CAINFO`
+  to your CA bundle.
+- **State.** Checkouts and the list of reviewed commits live in `~/.cache/helmreview/mr`
+  (`--state-dir`; inside the data volume in the container). The reviewed commit is also stored
+  in the comment, so an empty state folder does not cause a second review. A merge request that
+  changes nothing helmreview reviews gets no comment. A scan that fails is tried three times.
+- **Whose code runs.** `helm lint` and `helm template` run on the merge request's charts, as
+  they would in CI. Watch only projects whose contributors you would let do that on this host,
+  and consider `--skip-forks`. Settings come from `~/.helmreview.yml`, the environment and flags; a repository
+  cannot change the GitLab URL, the projects or the Ollama host.
 
 ## Docker
 
@@ -330,6 +378,8 @@ server rather than from the GPU itself. In order of impact:
 
 See `examples/gitlab-ci.yml` (Code Quality widget in merge requests). It uses the container
 image, which has helm.
+To review merge requests without touching any pipeline, see
+[GitLab merge requests](#gitlab-merge-requests).
 
 ## Development
 

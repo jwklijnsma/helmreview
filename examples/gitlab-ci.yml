@@ -24,5 +24,38 @@ helmreview:
     reports:
       codequality: .helmreview/gl-code-quality-report.json
   rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"     # schedules are for the job below
+      when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+
+# --- Or: one central job instead of a job in every repository ---------------------------
+# Put ONLY this job in one project (for example "platform/helmreview") and add a pipeline
+# schedule there (Build > Pipeline schedules, e.g. */10 * * * *). Each run looks at the open
+# merge requests of the projects below, reviews new commits and keeps one comment per merge
+# request up to date. The other repositories need no CI change at all.
+#
+# CI/CD variables of this project:
+#   GITLAB_TOKEN  masked; group or project access token, scope api, on the watched projects
+#   OLLAMA_HOST   your Ollama server, reachable from the runner
+helmreview-merge-requests:
+  stage: test
+  image:
+    name: ghcr.io/jwklijnsma/helmreview:latest
+    entrypoint: [""]
+  variables:
+    HELMREVIEW_MODEL: "qwen2.5-coder:14b"
+    HELMREVIEW_GITLAB_URL: "$CI_SERVER_URL"
+    HELMREVIEW_GITLAB_PROJECTS: "platform/charts,platform/apps"      # comma-separated
+    # HELMREVIEW_GITLAB_GROUPS: "platform"                      # or whole groups
+    GIT_STRATEGY: none                    # the job fetches the merge requests itself
+  script:
+    - helmreview watch-mrs --once --state-dir "$CI_PROJECT_DIR/.mr-state"
+  cache:                                  # checkouts between runs; losing it is harmless,
+    key: helmreview-mr-state                  # the comment remembers which commit was reviewed
+    paths: [.mr-state]
+  resource_group: helmreview-merge-requests   # never two runs at once
+  timeout: 2h
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
