@@ -1,11 +1,13 @@
 # helmreview web UI as a Podman Quadlet (RHEL 9/10, Fedora, any Podman >= 4.4).
+# ROOTLESS ONLY: put it in ~/.config/containers/systemd/, never in /etc/containers/systemd/.
+# As root it fails with exit 125 ("ID-mapped copy of layer"); use helmreview-rootful.container there.
 # Easiest: `./install.sh` in this folder does all the steps below (see install.sh --help).
 #
 # Rootless, as the user who owns the repositories (recommended):
 #   openssl rand -hex 24 | tr -d '\n' | podman secret create helmreview-token -
 #   mkdir -p ~/.config/containers/systemd ~/.config/helmreview
 #   cp helmreview.container ~/.config/containers/systemd/
-#   install -m 600 helmreview.env.example ~/.config/helmreview/helmreview.env   # optional settings
+#   install -m 600 helmreview.env.example ~/.config/helmreview/helmreview.env   # required (may stay as is)
 #   systemctl --user daemon-reload
 #   systemctl --user start helmreview
 #   loginctl enable-linger "$USER"                    # keep it running without a login
@@ -47,8 +49,9 @@ Group=1000
 
 # The access token, from the Podman secret created above.
 Secret=helmreview-token,type=env,target=HELMREVIEW_WEB_TOKEN
-# Optional settings (model, context size, language); `-` = fine if it is missing.
-EnvironmentFile=-%h/.config/helmreview/helmreview.env
+# Settings (model, Ollama URL, ...). The file must exist: Quadlet hands this path to
+# `podman --env-file`, which has no "optional" form. An unchanged copy of the example is fine.
+EnvironmentFile=%h/.config/helmreview/helmreview.env
 # Ollama on this host; change it here for Ollama on another machine. On this host it
 # must listen on more than 127.0.0.1 for the container to reach it:
 # `systemctl edit ollama` -> [Service] Environment=OLLAMA_HOST=0.0.0.0
