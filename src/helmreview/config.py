@@ -14,7 +14,8 @@ CONFIG_NAMES = (".helmreview.yml", ".helmreview.yaml")
 
 # Keys a repo-level config is NOT allowed to set unless the user opts in,
 # so a cloned repo cannot point your review at someone else's server.
-REPO_UNTRUSTED_KEYS = {"ollama_host", "api_key"}
+REPO_UNTRUSTED_KEYS = {"ollama_host", "api_key", "gitlab_url", "gitlab_token_env",
+                       "gitlab_projects", "gitlab_groups"}
 
 
 @dataclass
@@ -52,6 +53,15 @@ class Config:
                                       # request (split further on timeout)
     fix_context_lines: int = 25       # `fix`: lines of context around each finding
     fix_full_file_lines: int = 120    # `fix`: send the whole file when it is this short
+    # `watch-mrs` / `serve --watch-mrs`: review GitLab merge requests as they come in.
+    gitlab_url: str = ""              # e.g. https://gitlab.example.nl
+    gitlab_token_env: str = "GITLAB_TOKEN"   # env var holding the token (scope: api)
+    gitlab_projects: list[str] = field(default_factory=list)   # group/project paths or ids
+    gitlab_groups: list[str] = field(default_factory=list)     # every project in these groups
+    gitlab_interval: int = 120        # seconds between polls
+    gitlab_skip_drafts: bool = False  # leave draft merge requests alone
+    gitlab_skip_forks: bool = False   # leave merge requests from forks alone
+    gitlab_max_age_days: float = 14   # ignore merge requests not updated for this long (0 = off)
     house_rules: str = ""             # extra instructions appended to the LLM prompt
     disabled_rules: list[str] = field(default_factory=list)  # e.g. ["HR009", "helm-lint:icon"]
 
@@ -95,6 +105,13 @@ ENV_MAP = {
     "HELMREVIEW_NUM_PREDICT": "num_predict",
     "HELMREVIEW_FIX_BATCH_SIZE": "fix_batch_size",
     "HELMREVIEW_FAIL_ON": "fail_on",
+    "HELMREVIEW_GITLAB_URL": "gitlab_url",
+    "HELMREVIEW_GITLAB_TOKEN_ENV": "gitlab_token_env",
+    "HELMREVIEW_GITLAB_PROJECTS": "gitlab_projects",     # comma-separated
+    "HELMREVIEW_GITLAB_GROUPS": "gitlab_groups",         # comma-separated
+    "HELMREVIEW_GITLAB_INTERVAL": "gitlab_interval",
+    "HELMREVIEW_GITLAB_SKIP_DRAFTS": "gitlab_skip_drafts",
+    "HELMREVIEW_GITLAB_SKIP_FORKS": "gitlab_skip_forks",
 }
 
 
@@ -135,11 +152,23 @@ def load_config(root: Path, explicit: Path | None = None) -> tuple[Config, list[
     if explicit:
         warnings += cfg.update(_read_yaml(explicit), source=str(explicit))
 
-    int_keys = {"workers", "num_ctx", "timeout", "num_predict", "fix_batch_size"}
+    int_keys = {"workers", "num_ctx", "timeout", "num_predict", "fix_batch_size",
+                "gitlab_interval"}
+    list_keys = {"gitlab_projects", "gitlab_groups"}
+    bool_keys = {"gitlab_skip_drafts", "gitlab_skip_forks"}
     for env, key in ENV_MAP.items():
         val = os.environ.get(env)
-        if val:
+        if not val:
+            continue
+        if key in list_keys:
+            setattr(cfg, key, [v.strip() for v in val.split(",") if v.strip()])
+        elif key in bool_keys:
+            setattr(cfg, key, val.strip().lower() in ("1", "true", "yes", "on"))
+        else:
             setattr(cfg, key, int(val) if key in int_keys else val)
+    for key in list_keys:                     # `gitlab_projects: group/repo` in YAML
+        if isinstance(getattr(cfg, key), str):
+            setattr(cfg, key, [getattr(cfg, key)])
 
     cfg.ollama_host = _normalise_host(cfg.ollama_host)
     return cfg, warnings

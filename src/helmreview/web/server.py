@@ -241,6 +241,9 @@ class WebApp:
         # One worker runs the queue in order: every job shares the GPU.
         self.cv = threading.Condition(self.lock)
         self.pending: deque[str] = deque()
+        # Held while a job's process runs; the merge-request watcher takes it for its scans
+        # too, so the two never compete for the GPU.
+        self.run_lock = threading.Lock()
         threading.Thread(target=self._worker, name="helmreview-jobs", daemon=True).start()
         self._status_cache: tuple[float, dict] | None = None
 
@@ -580,7 +583,8 @@ class WebApp:
                 job.status = "running"
                 job.started = time.time()
             try:
-                self._run(job, job.path)
+                with self.run_lock:
+                    self._run(job, job.path)
             except Exception as exc:  # noqa: BLE001 - a broken job must not stop the queue
                 job.add_line(f"error: {exc.__class__.__name__}: {exc}")
                 job.status, job.ended = "failed", time.time()
@@ -971,7 +975,7 @@ def default_upload_dir() -> Path:
 def serve(roots: list[Path], bind: str = "127.0.0.1", port: int = 8766,
           token: str | None = None, no_auth: bool = False, open_browser: bool = False,
           verbose: bool = False, upload_dir: Path | None = None, no_upload: bool = False,
-          max_upload_mb: int = 100, upload_keep_days: float = 7) -> int:
+          max_upload_mb: int = 100, upload_keep_days: float = 7, mr_watcher=None) -> int:
     if no_auth and not is_loopback(bind):
         print("error: --no-auth is only allowed when binding to localhost", file=sys.stderr)
         return 2
@@ -1032,6 +1036,18 @@ def serve(roots: list[Path], bind: str = "127.0.0.1", port: int = 8766,
     elif not is_loopback(bind):
         print("  warning: listening on a non-local address over plain HTTP; put it behind "
               "a TLS reverse proxy or an SSH tunnel", file=sys.stderr)
+    stop_watcher = threading.Event()
+    if mr_watcher is not None:
+        # Scans for merge requests wait their turn behind the jobs started in the UI and
+        # use the model picked there.
+        mr_watcher.lock = app.run_lock
+        mr_watcher.scan_args = lambda: (
+            [f"--model={app.settings['model']}"] if app.settings.get("model") else [])
+        targets = ", ".join(mr_watcher.projects + [g + "/*" for g in mr_watcher.groups])
+        print(f"  merge requests: {targets} on {mr_watcher.gitlab.url}, "
+              f"every {mr_watcher.interval}s", file=sys.stderr)
+        threading.Thread(target=mr_watcher.run_forever, args=(stop_watcher,),
+                         name="helmreview-mrs", daemon=True).start()
     if open_browser:
         import webbrowser
         webbrowser.open(url.replace("<this-host>", "localhost"))
@@ -1040,6 +1056,7 @@ def serve(roots: list[Path], bind: str = "127.0.0.1", port: int = 8766,
     except KeyboardInterrupt:
         pass
     finally:
+        stop_watcher.set()
         for job in list(app.jobs.values()):
             if job.active:
                 app.cancel_job(job.id)
