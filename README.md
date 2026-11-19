@@ -1,5 +1,8 @@
 # helmreview
 
+[![Docker](https://github.com/jwklijnsma/helmreview/actions/workflows/docker.yml/badge.svg)](https://github.com/jwklijnsma/helmreview/actions/workflows/docker.yml)
+[![Docs](https://github.com/jwklijnsma/helmreview/actions/workflows/docs.yml/badge.svg)](https://jwklijnsma.github.io/helmreview/)
+
 Review Helm charts and Kubernetes manifests with three layers, all running on your own hardware:
 
 1. **`helm lint`** for chart structure, template errors and deprecated APIs.
@@ -19,367 +22,64 @@ Review Helm charts and Kubernetes manifests with three layers, all running on yo
 No code leaves your network, and `helm` never talks to a cluster. Reports come out as
 Markdown, JSON, SARIF and GitLab Code Quality.
 
-`helmreview fix` lets the model fix its findings, and keeps only edits after which the chart
-still renders.
+📖 **Documentation: <https://jwklijnsma.github.io/helmreview/>**
 
-## Install
+## Features
+
+- **Scan** a repo, or only what a branch changed (`--diff origin/main`).
+- **Fix** model findings: edits are verified first, and only kept when the chart still
+  renders with `helm template`. Nothing is ever committed.
+- **Web UI** (`helmreview serve`): scan, browse findings, preview and apply fixes, upload a
+  ZIP, with a job queue on the server. Works air-gapped.
+- **GitLab merge requests** (`helmreview watch-mrs`): polls GitLab and keeps one comment per
+  merge request up to date. No CI change in your repos.
+- **Container and service**: `ghcr.io/jwklijnsma/helmreview` with helm built in, installed as
+  a Podman Quadlet service with one command (`deploy/systemd/install.sh`).
+
+## Quick start
 
 ```bash
-pip install .                 # Python 3.10+
-# helm 3 or 4 on the PATH: https://helm.sh/docs/intro/install/
+git clone https://github.com/jwklijnsma/helmreview.git && cd helmreview
+pip install .                 # Python 3.10+, and helm 3 or 4 on the PATH
 ollama pull qwen2.5-coder:14b # any coding model works; bigger is better if VRAM allows
 helmreview doctor             # checks helm, Ollama and the model
+
+cd ~/git/platform-charts
+helmreview --host http://gpu-box:11434   # reports in .helmreview/
+helmreview fix --dry-run                 # .helmreview/fix.patch, changes nothing
 ```
 
-Or use the container image, which has helm built in (see [Docker](#docker)).
+As a service with the web UI: `sudo deploy/systemd/install.sh --lan`.
 
-## Use
+## Commands
 
-```bash
-helmreview                                   # scan the current directory
-helmreview ~/git/platform-charts             # scan another repo
-helmreview --host http://gpu-box:11434       # use a remote Ollama server
-helmreview --model qwen3-coder:30b --lang nl # other model, Dutch report
-helmreview --diff origin/main                # only review what changed (for MRs)
-helmreview --only charts/keycloak            # one chart
-helmreview --no-llm                          # just helm lint + HR checks (fast)
-helmreview serve --root ~/git                # web UI (see below)
-helmreview watch-mrs --project platform/charts  # review GitLab merge requests as they come in
-helmreview -f md,json,sarif,gitlab -o out/   # pick report formats and folder
-```
-
-It finds every chart (a folder with `Chart.yaml`, subcharts included) and every folder of
-plain Kubernetes YAML outside the charts. Reports go to `<repo>/.helmreview/` by default (add
-it to `.gitignore`). The exit code is `1` when a finding is at or above `--fail-on` (default
-`high`), `2` on a tool error, and `0` otherwise, so it works as a pipeline gate.
-
-Charts whose dependencies are not vendored in `charts/` (no `helm dependency build`) are
-rendered without them, so the chart's own templates are still checked; the report says so.
-
-### Diff mode
-
-`--diff <ref>` reviews only the charts that contain changed files. The model still sees the
-whole file for context, but only findings on **added or modified lines** are reported (use
-`--diff-scope files` to report everything in the changed files).
-
-## Automatic fixes
-
-```bash
-helmreview fix                   # fix what the last scan found (runs a scan first if needed)
-helmreview fix --dry-run         # only write .helmreview/fix.patch
-helmreview fix --only charts/web # one chart
-```
-
-The model gets each file with its findings, verifies them (many model findings are false
-positives) and either declines them or returns small exact search/replace edits. Every edit is
-checked before anything is written:
-
-- it must match the file exactly once and stay small (a model that rewrites the file is refused);
-- `values.yaml`, `Chart.yaml` and manifests must still parse as YAML;
-- **the chart must still render** with `helm template`: if it rendered before and an edit
-  breaks it, the file helm names is reverted (and, if that is not enough, the chart's other
-  edits too).
-
-The HR findings are listed in the fix report as *needs a human*, with what to do: they touch
-values and defaults that are yours to decide. Only model findings at or above
-`fix_min_severity` (`medium`) and `fix_min_confidence` (`0.8`) are sent.
-
-Work happens in a scratch copy. Nothing is committed: review with `git diff`, undo with
-`git checkout -- .`. `fix` refuses to run on a repo with uncommitted changes (`--allow-dirty`
-to override) so that `git diff` shows only its changes; outside git it keeps a backup in
-`.helmreview/backup/`. Answers and timeouts are cached in `.helmreview/fix-cache.json`, so a
-re-run only asks about files that changed. Use `--no-cache` to ask again.
-
-## Web UI
-
-```
-helmreview serve --root ~/git                    # a folder of repos (or one repo)
-helmreview serve --root ~/git/infra --root ~/git/platform --open
-```
-
-It prints a link with an access token (`http://localhost:8766/?token=…`). Open it once; the token becomes a cookie. From the browser you can:
-
-- pick a repository and run a **scan**, with the same options as the CLI (diff mode, only some charts, model override, skip the model, `helm lint --strict`);
-- let it run in the **background**: scans and fixes go into a queue on the server and keep running when you close the page. The **Jobs** button in the top bar shows what is running, what is waiting (with its place in the queue) and what finished, with progress, the log, Cancel/Remove, and download buttons;
-- pick the **model** in the top bar: a list of the models your Ollama has (or type one). It applies to every new scan and fix, survives restarts (saved in `~/.cache/helmreview/settings.json`, in the data volume for the container), and a model set in a repo's Options still wins for that repo;
-- browse findings by severity, source (HR checks / helm lint / model) or rule, with the suggested fix and the code around each line;
-- **Preview fixes** (`fix --dry-run`) and read the fix report and colour diff, then **Apply fixes**. Nothing is ever committed; review with `git diff` as usual.
-- **Upload a ZIP** of a chart or chart repository (button or drag and drop). It is unpacked and its scan is queued straight away. **Fix & download** fixes it in the background; when it is done you get a notification with the fixed ZIP. A GitHub "Download ZIP" works as-is.
-- **download** the results: every finished job offers its files (fixed ZIP, `fix.patch`, fix report, report as Markdown, JSON or SARIF), and each repo has a **Downloads** tab with the latest ones.
-
-Scans and fixes run as `helmreview scan|fix` subprocesses, so they behave exactly like the CLI and write the same `.helmreview/` reports. Jobs run one at a time, in order, since they share the GPU; up to 20 can wait. The job list lives in the server process, so a restart of `helmreview serve` forgets it (the reports on disk stay).
-
-The UI is a React app (`web/`), built into `src/helmreview/web/static/` and shipped inside the Python package, so a normal install needs no Node and nothing is loaded from a CDN: it works on an air-gapped host.
-
-**Uploads** are unpacked into `~/.cache/helmreview/uploads` (`--upload-dir`), up to 100 MB per ZIP (`--max-upload-mb`), and deleted after 7 days (`--upload-keep-days`, or the Delete button). Each one becomes its own small git repository, so `fix` works on it. Extraction refuses paths that leave the folder, skips symlinks and any `.git`, and stops ZIP bombs (size, file count and compression ratio are checked on the bytes actually written). Uploaded charts are rendered with `helm template` (no cluster access, no plugins), just like a repo under `--root`. `--no-upload` switches uploads off.
-
-**Security.** By default it listens on `127.0.0.1` only and every API call needs the token (`--token` or `$HELMREVIEW_WEB_TOKEN` to fix it, otherwise a random one per start). Only repositories under the `--root` folders are reachable, and file reads cannot leave a repo. The Ollama host, output folder and config file cannot be set from the browser. POSTs need a custom header, so other sites cannot trigger a scan. `--no-auth` is refused unless you bind to localhost. To reach it from another machine, prefer an SSH tunnel (`ssh -L 8766:localhost:8766 gpu-box`). If you do use `--bind 0.0.0.0`, put it behind a TLS reverse proxy, because the token travels in plain HTTP otherwise.
-
-## GitLab merge requests
-
-Instead of adding a CI job to every repository, let helmreview fetch the merge requests itself.
-It asks GitLab for open merge requests every two minutes, runs a `--diff` scan against the
-target branch for each new commit, and keeps **one comment** per merge request up to date with
-the findings on the changed lines.
-
-```bash
-export GITLAB_TOKEN=glpat-…                 # scope: api
-helmreview watch-mrs --gitlab-url https://gitlab.example.nl \
-    --project platform/charts --group platform/apps     # runs until Ctrl-C
-helmreview watch-mrs … --dry-run             # only list what would be reviewed
-helmreview watch-mrs … --once                # one round, then exit (cron or a scheduled pipeline)
-helmreview serve --root ~/git --watch-mrs    # the web UI and the watcher in one process
-```
-
-With `serve --watch-mrs` (or `HELMREVIEW_WATCH_MRS=1` for the container), merge-request scans wait
-their turn behind the jobs started in the UI and use the model picked there. They do not show
-up in the Jobs list; follow them in the log.
-
-| Setting (`~/.helmreview.yml`) | Environment | Default | |
-|---|---|---|---|
-| `gitlab_url` | `HELMREVIEW_GITLAB_URL` | – | `--gitlab-url` |
-| `gitlab_projects` | `HELMREVIEW_GITLAB_PROJECTS` (comma-separated) | – | `--project`, path or id |
-| `gitlab_groups` | `HELMREVIEW_GITLAB_GROUPS` | – | `--group`; includes subgroups |
-| `gitlab_token_env` | `HELMREVIEW_GITLAB_TOKEN_ENV` | `GITLAB_TOKEN` | name of the variable that holds the token |
-| `gitlab_interval` | `HELMREVIEW_GITLAB_INTERVAL` | `120` | seconds between polls |
-| `gitlab_skip_drafts` / `gitlab_skip_forks` | `HELMREVIEW_GITLAB_SKIP_DRAFTS` / `…_SKIP_FORKS` | `false` | |
-| `gitlab_max_age_days` | – | `14` | merge requests untouched for longer are left alone (`0` = all) |
-
-- **As a scheduled pipeline.** `examples/gitlab-ci.yml` has a ready job: one project with a
-  pipeline schedule reviews the merge requests of all the others.
-- **Token.** A project or group access token with the `api` scope and the Reporter role is
-  enough (it reads the repository and writes a comment). It is only ever read from the
-  environment and is not written to the checkout's git config.
-- **Polling, not a webhook.** Only outgoing HTTPS to GitLab is needed, so this works from a GPU
-  box GitLab cannot reach. With an internal CA, set `REQUESTS_CA_BUNDLE` and `GIT_SSL_CAINFO`
-  to your CA bundle.
-- **State.** Checkouts and the list of reviewed commits live in `~/.cache/helmreview/mr`
-  (`--state-dir`; inside the data volume in the container). The reviewed commit is also stored
-  in the comment, so an empty state folder does not cause a second review. A merge request that
-  changes nothing helmreview reviews gets no comment. A scan that fails is tried three times.
-- **Whose code runs.** `helm lint` and `helm template` run on the merge request's charts, as
-  they would in CI. Watch only projects whose contributors you would let do that on this host,
-  and consider `--skip-forks`. Settings come from `~/.helmreview.yml`, the environment and flags; a repository
-  cannot change the GitLab URL, the projects or the Ollama host.
-
-## Docker
-
-Every push to `main` publishes `ghcr.io/jwklijnsma/helmreview` (amd64 + arm64) with helm included. Ollama is not in the image; by default it talks to Ollama on the Docker host.
-
-```bash
-# Web UI for every repo under ~/git
-docker run -d --name helmreview -p 127.0.0.1:8766:8766 \
-  --add-host=host.docker.internal:host-gateway \
-  --user "$(id -u):$(id -g)" -v ~/git:/repos \
-  -e HELMREVIEW_WEB_TOKEN="$(openssl rand -hex 24)" \
-  ghcr.io/jwklijnsma/helmreview
-# the link with the token: docker logs helmreview 2>&1 | grep open:
-
-# One-off scan of the current directory (CI, pre-merge checks)
-docker run --rm --add-host=host.docker.internal:host-gateway \
-  --user "$(id -u):$(id -g)" -v "$PWD:/repos/work" \
-  ghcr.io/jwklijnsma/helmreview scan /repos/work
-```
-
-- `--user "$(id -u):$(id -g)"` makes reports and fixes belong to you, not root. The image also runs under arbitrary UIDs (OpenShift).
-- On Linux, `--add-host=host.docker.internal:host-gateway` is needed to reach Ollama on the host. Ollama must listen on more than 127.0.0.1 (`OLLAMA_HOST=0.0.0.0` in its service). Or set `-e OLLAMA_HOST=http://gpu-box:11434`.
-- Pass settings with `HELMREVIEW_MODEL`, `HELMREVIEW_NUM_CTX` and so on, or mount a config: `-v ~/.helmreview.yml:/home/helmreview/.helmreview.yml:ro`.
-- Tags: `latest` and `main` follow the main branch, `0.1.0`/`0.1` come from releases (`make release`), and `sha-abc1234` pins an exact build.
-
-With Ollama on the GPU in the same compose project:
-
-```yaml
-services:
-  ollama:
-    image: ollama/ollama
-    volumes: [ollama:/root/.ollama]
-    deploy:
-      resources:
-        reservations:
-          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
-  helmreview:
-    image: ghcr.io/jwklijnsma/helmreview
-    user: "1000:1000"            # your uid:gid
-    ports: ["127.0.0.1:8766:8766"]
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-      HELMREVIEW_WEB_TOKEN: ${HELMREVIEW_WEB_TOKEN:?put HELMREVIEW_WEB_TOKEN=... in .env}
-    volumes: [~/git:/repos]
-    depends_on: [ollama]
-volumes:
-  ollama:
-```
-
-Pull the model once with `docker compose exec ollama ollama pull qwen2.5-coder:14b`.
-
-## Run as a service (systemd)
-
-Ready-made units are in [`deploy/systemd/`](deploy/systemd/). They start the container at boot, restart it on failure, log to the journal and keep uploads in a volume.
-
-**Podman (RHEL, Fedora): one command**
-
-```bash
-sudo deploy/systemd/install.sh                 # system service, starts at boot, repos in /srv/charts
-deploy/systemd/install.sh                      # or rootless, as yourself, repos in ~/git
-sudo deploy/systemd/install.sh --repos /srv/git --lan --model qwen3-coder:30b --ollama http://gpu-box:11434
-make install-service ARGS="--lan"              # the same from the Makefile
-```
-
-Without a checkout: `curl -fsSL https://raw.githubusercontent.com/jwklijnsma/helmreview/main/deploy/systemd/install.sh | sudo bash -s -- --lan`.
-
-It creates the access token as a Podman secret, writes the settings file
-(`/etc/helmreview/helmreview.env`, or `~/.config/helmreview/` rootless) and the Quadlet unit,
-runs the container as the owner of the repos folder, starts the service, waits until it
-answers and prints the link with the token. Run it again to change the folder, port, model or
-Ollama URL (the previous unit is kept as `.bak`); `--new-token` rotates the token and
-`--uninstall` removes the service. Images update daily through `podman-auto-update.timer`.
-
-**Podman by hand: Quadlet, rootless, as the user who owns the repos**
-
-
-```bash
-openssl rand -hex 24 | tr -d '\n' | podman secret create helmreview-token -   # the access token
-mkdir -p ~/.config/containers/systemd ~/.config/helmreview
-cp deploy/systemd/helmreview.container ~/.config/containers/systemd/
-install -m 600 deploy/systemd/helmreview.env.example ~/.config/helmreview/helmreview.env   # must exist
-systemctl --user daemon-reload
-systemctl --user start helmreview
-loginctl enable-linger "$USER"                           # keeps running without a login
-systemctl --user enable --now podman-auto-update.timer   # pulls new images daily
-```
-
-Show the token again with `podman secret inspect --showsecret --format '{{.SecretData}}' helmreview-token`. Settings (model, context size) go in `~/.config/helmreview/helmreview.env`; the file must exist, an unchanged copy of `helmreview.env.example` is fine. The repositories come from `~/git`; change the `Volume=%h/git:/repos:z` line for another folder. Reports and fixes stay owned by you (`UserNS=keep-id`). Ollama on the same host is reached as `host.containers.internal`, so it must listen on more than 127.0.0.1 (`systemctl edit ollama` → `Environment=OLLAMA_HOST=0.0.0.0`). For Ollama on another machine, change the unit's `Environment=OLLAMA_HOST=` line.
-
-As a system service run by root instead (in `/etc/containers/systemd/`), use [`helmreview-rootful.container`](deploy/systemd/helmreview-rootful.container); its header has the steps.
-
-**Docker**
-
-```bash
-sudo mkdir -p /etc/helmreview
-sudo install -m 600 deploy/systemd/helmreview.env.example /etc/helmreview/helmreview.env   # uncomment and set the token
-sudo cp deploy/systemd/helmreview-docker.service /etc/systemd/system/helmreview.service
-sudo systemctl edit helmreview     # REPOS=/path/to/repos, RUN_AS=uid:gid of their owner
-sudo systemctl enable --now helmreview
-```
-
-It pulls the newest image on every restart (`sudo systemctl restart helmreview` updates it).
-
-Both: the UI is on `http://localhost:8766/?token=<your token>` and the logs are in `journalctl [--user] -u helmreview -f`. The server refuses to start while the token is still the example value; without any token it makes up a new random one at every start. Both units drop all capabilities and set no-new-privileges.
-
-## Releasing
-
-Releases run on GitHub. In the repository: **Actions → release → Run workflow**, pick `patch`, `minor` or `major` (or type an exact version), and start it. Or from a terminal with the [GitHub CLI](https://cli.github.com):
-
-```bash
-make release                    # 0.1.0 -> 0.1.1, then follows the run
-make release BUMP=minor         # 0.1.0 -> 0.2.0   (or BUMP=major)
-make release VERSION=1.0.0      # an exact version
-make release-dry-run            # rehearse: test and build everything, publish nothing
-```
-
-The workflow:
-1. checks the new version is higher and not released yet, and runs the tests;
-2. bumps `__version__` in `src/helmreview/__init__.py` (the only place the version lives), commits `release: vX.Y.Z` to `main`, and pushes it together with an annotated `vX.Y.Z` tag;
-3. builds the wheel and sdist and creates the GitHub release with install lines and notes generated from the merged PRs;
-4. builds and smoke-tests the Docker image and publishes `ghcr.io/jwklijnsma/helmreview:X.Y.Z`, `:X.Y` and `:latest`.
-
-A dry run does all of this without the push, the release or the image push, and shows the release notes it would use in the run summary. If you ever push a `vX.Y.Z` tag by hand, it still gets a GitHub release and an image.
-
-## Configure
-
-`helmreview init` writes a sample `.helmreview.yml`. Settings are read in this order, later wins:
-built-in defaults, `~/.helmreview.yml`, the repo's `.helmreview.yml`, environment variables, then CLI flags.
-
-| Key | Default | Notes |
-|---|---|---|
-| `model` | `qwen2.5-coder:14b` | env `HELMREVIEW_MODEL` |
-| `ollama_host` | `http://localhost:11434` | env `OLLAMA_HOST`; **ignored in a repo config** |
-| `api_key` | – | Bearer token if Ollama sits behind an auth proxy; ignored in a repo config |
-| `language` | `en` | `en` or `nl` |
-| `num_ctx` | `16384` | context window per request |
-| `workers` | `1` | parallel requests; keep it at or below the server's `OLLAMA_NUM_PARALLEL` |
-| `timeout` | `600` | max seconds without model output; env `HELMREVIEW_TIMEOUT` |
-| `deadline` | `0` | max seconds per request (`0` = 2 × `timeout`) |
-| `num_predict` | `4096` | cap on generated tokens; stops a model stuck repeating JSON |
-| `keep_alive` | `30m` | keeps the model loaded between requests |
-| `per_file` | `true` | one model request per file |
-| `values_context_chars` | `6000` | how much of `values.yaml` goes along with a template |
-| `fail_on` / `min_severity` | `high` / `info` | `info` `low` `medium` `high` `critical` |
-| `min_confidence` | `0.5` | drop model findings it is unsure about |
-| `lint_strict` | `false` | `helm lint --strict` (`--strict`) |
-| `fix_min_severity` / `fix_min_confidence` | `medium` / `0.8` | which model findings `fix` may touch |
-| `fix_batch_size` | `0` | findings per request in `fix`; `0` = all of a file at once (`--batch-size`) |
-| `disabled_rules` | `[]` | HR rule IDs or `helm-lint:icon`, `helm-lint:warning`, … |
-| `exclude` | sensible list | glob patterns |
-| `house_rules` | – | free text the model enforces, e.g. "images only from our registry" |
-
-A repo config cannot change `ollama_host` or `api_key` unless you set
-`HELMREVIEW_TRUST_REPO_CONFIG=1`. That way, a repo you cloned cannot send your code to someone
-else's server.
-
-## Built-in rules
-
-Run `helmreview rules` for the list.
-
-| Rule | What |
+| Command | |
 |---|---|
-| HR000 | Chart does not render with its default values / YAML error |
-| HR001 | Hard-coded secret in `values.yaml` or a Secret template (`{{ }}` placeholders are fine) |
-| HR002 / HR004 | Privileged container / runs as root (`runAsUser: 0`) |
-| HR003 | Not hardened: `allowPrivilegeEscalation`, `runAsNonRoot`, `readOnlyRootFilesystem`, `drop: [ALL]`, seccomp |
-| HR005 / HR009 | No CPU/memory requests or memory limit / no readiness or liveness probe |
-| HR006 | Image tag `latest` or none |
-| HR007 / HR008 / HR010 | hostNetwork/PID/IPC, hostPath volumes, dangerous capabilities |
-| HR011 | `*` in RBAC rules, bindings to cluster-admin |
-| HR012 | API versions removed from Kubernetes (`extensions/v1beta1`, `policy/v1beta1`, …) |
-| HR013 / HR020 | LoadBalancer/NodePort Services; Ingress or Route without TLS |
-| HR014 | Namespace hard-coded in a template instead of `.Release.Namespace` |
-| HR015 / HR021 | Private keys committed, credentials in URLs |
-| HR016 – HR019 | Chart apiVersion v1, unpinned or plain-HTTP dependencies, no `values.schema.json` |
+| `helmreview [scan] [path]` | Review the codebase (default command) |
+| `helmreview fix [path]` | Fix findings in your working tree; review with `git diff` |
+| `helmreview serve --root ~/git` | Web UI on port 8766 |
+| `helmreview watch-mrs --project group/repo` | Review GitLab merge requests as they come in |
+| `helmreview doctor` | Check helm, Ollama, the model and its speed |
+| `helmreview rules` | List the built-in HR rules |
+| `helmreview init` | Write a sample `.helmreview.yml` |
 
-Findings from rendered objects point at the template they came from (the line is the first
-match for the key in that template). Helm test hooks are not held to the hardening, resource
-and probe rules. Model findings use the `llm:<rule>` prefix and carry a confidence score.
+The exit code is `1` when a finding is at or above `--fail-on` (default `high`), `2` on a tool
+error, and `0` otherwise, so it works as a pipeline gate.
 
-## Speed
+## Documentation
 
-Both `scan` and `fix` send **one request per file** and work through the files in order:
-`[12/40] ✓ charts/web/templates/deployment.yaml 41s`. The status of every file (pending, running,
-done, cached, failed) is kept in `.helmreview/queue.json`. To watch a long run from another
-terminal, use `jq '.counts' .helmreview/queue.json`. Set `per_file: false` to send a whole
-chart in one request.
+| | |
+|---|---|
+| [Install](https://jwklijnsma.github.io/helmreview/getting-started/install/) · [Quick start](https://jwklijnsma.github.io/helmreview/getting-started/quickstart/) | Requirements, pip, container |
+| [Scan](https://jwklijnsma.github.io/helmreview/usage/scan/) · [Automatic fixes](https://jwklijnsma.github.io/helmreview/usage/fix/) | What gets reviewed, diff mode, exit codes, how fixes are verified |
+| [Web UI](https://jwklijnsma.github.io/helmreview/usage/web-ui/) · [GitLab merge requests](https://jwklijnsma.github.io/helmreview/usage/merge-requests/) | Jobs, uploads, security; the MR watcher |
+| [Docker](https://jwklijnsma.github.io/helmreview/deploy/docker/) · [systemd](https://jwklijnsma.github.io/helmreview/deploy/systemd/) · [CI](https://jwklijnsma.github.io/helmreview/deploy/ci/) | Container, `install.sh` and service units, GitLab CI |
+| [Speed and tuning](https://jwklijnsma.github.io/helmreview/speed/) · [Troubleshooting](https://jwklijnsma.github.io/helmreview/troubleshooting/) | `doctor`, Ollama tuning, model choice, common problems |
+| [Configuration](https://jwklijnsma.github.io/helmreview/reference/configuration/) · [Rules](https://jwklijnsma.github.io/helmreview/reference/rules/) · [Commands](https://jwklijnsma.github.io/helmreview/reference/cli/) | Every setting, rule and flag |
+| [Contributing](https://jwklijnsma.github.io/helmreview/development/contributing/) · [Releasing](https://jwklijnsma.github.io/helmreview/development/releasing/) | Tests, web UI build, docs, releases |
 
-A local model will never match a cloud service, but most slow runs come from a misconfigured
-server rather than from the GPU itself. In order of impact:
-
-1. **Run `helmreview doctor`.** It measures prompt and generation speed and estimates how long
-   one fix batch and one scan chunk take. It also flags the two big problems:
-   - part of the model running on the CPU (often 5–10× slower);
-   - the model reloading between requests because another app on the same server uses a
-     different model or `num_ctx`.
-2. **Tune the server.** Run `sudo scripts/tune-ollama-server.sh --parallel 2` on the Ollama
-   host. It turns on flash attention, a q8 KV cache, parallel slots and keep-alive. Then run
-   helmreview with `--workers 2`, or set it in `~/.helmreview.yml`.
-3. **Re-runs are cheap.** Model answers are cached in `.helmreview/scan-cache.json` and
-   `fix-cache.json`, so only changed files go back to the model. Requests that timed out are
-   remembered too and are split straight away next time.
-4. **Use a smaller model for `fix`.** `helmreview fix --model qwen2.5-coder:7b` is about twice
-   as fast. Fixes are small and every edit is verified anyway.
-
-## Tips
-
-- **Model choice.** `qwen2.5-coder:14b` fits a 16 GB card with a 16k context. With 24–32 GB,
-  `qwen3-coder:30b` gives noticeably better reviews.
-- **Large repos.** Start with `--no-llm` to clear helm lint and HR findings cheaply, then run
-  the model.
-- **Too many low findings?** `disabled_rules: [HR009, HR019]` or `--min-severity medium`.
-
-## CI
-
-See `examples/gitlab-ci.yml` (Code Quality widget in merge requests). It uses the container
-image, which has helm.
-To review merge requests without touching any pipeline, see
-[GitLab merge requests](#gitlab-merge-requests).
+The site is built from [`docs/`](docs/) with [Zensical](https://zensical.org):
+`pip install -r requirements-docs.txt && zensical serve`.
 
 ## Development
 
@@ -389,15 +89,5 @@ pytest
 ```
 
 Tests use a mock Ollama server (`tests/mock_ollama.py`), so they need no GPU. Tests that render
-charts need `helm` on the PATH and are skipped without it.
-
-### Web UI
-
-The React app is in `web/` (Vite, TypeScript). `src/helmreview/web/static/` is its build output and is committed, so after changing `web/src/` run `make web` and commit both. CI rebuilds it and fails when they differ (for Renovate/Dependabot PRs it pushes the rebuilt bundle itself).
-
-```bash
-make serve        # API on :8766 (in one terminal)
-make web-dev      # http://localhost:5173 with hot reload, /api proxied to :8766
-make web-test     # typecheck + vitest
-make web          # production build into src/helmreview/web/static/
-```
+charts need `helm` on the PATH and are skipped without it. See
+[Contributing](https://jwklijnsma.github.io/helmreview/development/contributing/) for the web UI.

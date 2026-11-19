@@ -8,3 +8,7 @@ dist/
 
 # web UI (React); the built bundle in src/helmreview/web/static/ IS committed
 web/node_modules/
+
+# docs site (zensical build)
+/site/
+.cache/

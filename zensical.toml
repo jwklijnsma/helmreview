@@ -1,0 +1,95 @@
+# helmreview documentation - built with Zensical (https://zensical.org)
+#   pip install -r requirements-docs.txt
+#   zensical serve            # preview on http://localhost:8000
+#   zensical build --strict   # what CI runs
+
+[project]
+site_name = "helmreview"
+site_description = "Review Helm charts and Kubernetes manifests with helm lint, built-in checks on the rendered output and a local Ollama model"
+site_url = "https://jwklijnsma.github.io/helmreview/"
+repo_url = "https://github.com/jwklijnsma/helmreview"
+repo_name = "jwklijnsma/helmreview"
+edit_uri = "edit/main/docs/"
+copyright = "helmreview - no code leaves your network"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = [
+    { "Install" = "getting-started/install.md" },
+    { "Quick start" = "getting-started/quickstart.md" },
+  ] },
+  { "Use" = [
+    { "Scan" = "usage/scan.md" },
+    { "Automatic fixes" = "usage/fix.md" },
+    { "Web UI" = "usage/web-ui.md" },
+    { "GitLab merge requests" = "usage/merge-requests.md" },
+  ] },
+  { "Deploy" = [
+    { "Docker" = "deploy/docker.md" },
+    { "systemd service" = "deploy/systemd.md" },
+    { "CI" = "deploy/ci.md" },
+  ] },
+  { "Speed and tuning" = "speed.md" },
+  { "Troubleshooting" = "troubleshooting.md" },
+  { "Reference" = [
+    { "Configuration" = "reference/configuration.md" },
+    { "Built-in rules" = "reference/rules.md" },
+    { "Commands" = "reference/cli.md" },
+    { "Reports" = "reference/reports.md" },
+  ] },
+  { "Development" = [
+    { "Contributing" = "development/contributing.md" },
+    { "Releasing" = "development/releasing.md" },
+  ] },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.action.edit",
+  "content.code.annotate",
+  "content.code.copy",
+  "navigation.footer",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "search.highlight",
+]
+
+[project.theme.icon]
+logo = "simple/helm"
+repo = "fontawesome/brands/github"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "indigo"
+accent = "light blue"
+toggle.icon = "material/weather-night"
+toggle.name = "Dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "indigo"
+accent = "light blue"
+toggle.icon = "material/weather-sunny"
+toggle.name = "Light mode"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+pymdownx.details = {}
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.snippets = {}
+pymdownx.tabbed.alternate_style = true
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
