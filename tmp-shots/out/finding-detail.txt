@@ -1,0 +1,78 @@
+helmreview
+v0.1.2
+Ollama 0.12.6
+qwen2.5-coder:14b
+▾
+helm v3.22.1
+Jobs
+Upload ZIP for review
+or drop it on the page · max 100 MB
+REPOSITORIES
+platform-charts
+main · 18 findings · just now
+tenant-apps
+main · not scanned yet
+platform-charts
+⎇ main
+8b9fd26 webapp chart and raw manifests
+clean
+model qwen2.5-coder:14b
+/srv/charts/platform-charts
+Scan
+Preview fixes
+Apply fixes
+Options
+· defaults from .helmreview.yml
+Scan · Finished
+0s · just now
+Log
+All jobs
+findings at or above the fail-on level
+↓ Report (Markdown)
+↓ Report (JSON)
+↓ Report (SARIF)
+Findings18
+Fixes
+Notes8
+Downloads3
+1
+critical
+5
+high
+2
+medium
+7
+low
+3
+info
+2 units · scanned just now
+model qwen2.5-coder:14b · 0s
+All
+HR checks
+helm lint
+Model
+By file
+By rule
+charts/webapp/templates/deployment.yaml
+1 finding
+high
+L28
+llm:secret-in-envmodel
+The database password is rendered into a plain env value.
+charts/webapp/templates/service.yaml
+1 finding
+high
+L13
+llm:selector-label-mismatchmodel
+The Service selects app: webapp, but the pods only carry the app.kubernetes.io/* selector labels, so it has no endpoints.
+SUGGESTED FIX
+Use the webapp.selectorLabels helper in spec.selector.
+category: reliability
+confidence: 95%
+charts/webapp/templates/service.yaml:13
+9	  ports:
+10	    - port: {{ .Values.service.port }}
+11	      targetPort: http
+12	  selector:
+13	    app: webapp
+14	
