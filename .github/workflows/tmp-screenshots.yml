@@ -1,0 +1,38 @@
+name: tmp-screenshots
+# Temporary: takes the web UI screenshots on a runner that has helm, commits them back.
+on:
+  push:
+    branches: [tmp/screenshots]
+permissions:
+  contents: write
+jobs:
+  shots:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: helm version && google-chrome --version
+      - run: pip install -e . playwright
+      - name: Demo repositories
+        run: |
+          sudo mkdir -p /srv/charts && sudo chown "$USER" /srv/charts
+          mk(){ cp -r "$1" "$2"; (cd "$2"; git init -q -b main; git add -A; git -c user.name="Jan Wiebe Klijnsma" -c user.email=jw@example.com commit -qm "$3"); }
+          mk examples/sample-repo /srv/charts/platform-charts "webapp chart and raw manifests"
+          mk examples/sample-repo /srv/charts/tenant-apps "tenant apps"
+      - name: Screenshots
+        run: |
+          python3 tmp-shots/mock.py > ollama.url &
+          sleep 2
+          OLLAMA_HOST=$(cat ollama.url) helmreview serve --root /srv/charts --port 8766 --token demo-token-helm > serve.log 2>&1 &
+          sleep 4
+          timeout 900 python3 tmp-shots/shoot_review.py "http://127.0.0.1:8766/?token=demo-token-helm" platform-charts tenant-apps tmp-shots/out
+      - name: Commit
+        if: always()
+        run: |
+          cat serve.log || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tmp-shots/out
+          git commit -qm "screenshots" && git push
