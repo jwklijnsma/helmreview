@@ -24,6 +24,8 @@ Markdown, JSON, SARIF and GitLab Code Quality.
 
 📖 **Documentation: <https://jwklijnsma.github.io/helmreview/>**
 
+![The helmreview web UI: findings of a scan](docs/assets/screenshots/findings.png)
+
 ## Features
 
 - **Scan** a repo, or only what a branch changed (`--diff origin/main`).
@@ -35,6 +37,18 @@ Markdown, JSON, SARIF and GitLab Code Quality.
   merge request up to date. No CI change in your repos.
 - **Container and service**: `ghcr.io/jwklijnsma/helmreview` with helm built in, installed as
   a Podman Quadlet service with one command (`deploy/systemd/install.sh`).
+
+<details>
+<summary>More screenshots</summary>
+
+| | |
+|---|---|
+| ![A model finding with its suggested fix](docs/assets/screenshots/finding-detail.png) | ![The diff of a fix preview](docs/assets/screenshots/fix-diff.png) |
+| A model finding with its suggested fix and the code around it | The diff of a fix preview; nothing is committed |
+| ![The fix report](docs/assets/screenshots/fixes.png) | ![Background jobs](docs/assets/screenshots/jobs.png) |
+| The fix report: fixed, declined, needs a human | Background jobs with their downloads |
+
+</details>
 
 ## Quick start
 
