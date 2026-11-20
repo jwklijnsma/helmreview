@@ -1,0 +1,77 @@
+helmreview
+v0.1.2
+Ollama 0.12.6
+qwen2.5-coder:14b
+▾
+helm v3.22.1
+Jobs
+Upload ZIP for review
+or drop it on the page · max 100 MB
+REPOSITORIES
+platform-charts
+main · 18 findings · just now
+tenant-apps
+main · not scanned yet
+platform-charts
+⎇ main
+702c719 webapp chart and raw manifests
+clean
+model qwen2.5-coder:14b
+/srv/charts/platform-charts
+Scan
+Preview fixes
+Apply fixes
+Options
+· defaults from .helmreview.yml
+Fix preview · Finished
+0s · just now
+Log
+All jobs
+completed
+↓ Patch
+↓ Fix report
+Findings18
+Fixes
+Notes8
+Downloads5
+Last fix run just now
+Automatic fixes: platform-charts
+
+Dry run: nothing was written; see fix.patch.
+
+Stage	fixed	declined (false positive)	failed	manual
+llm	1	0	1	0
+static	0	0	0	14
+
+Files changed: 1
+
+Fixed (1)
+charts/webapp/templates/service.yaml:13 llm:selector-label-mismatch (llm) — use the selector helper
+Needs a human (14)
+charts/webapp/Chart.yaml:9 HR017 (static) — Dependency version not pinned: pin the dependency to one version
+charts/webapp/Chart.yaml:10 HR018 (static) — Dependency repository over plain HTTP: use an https:// or oci:// repository
+charts/webapp/templates/deployment.yaml:5 HR014 (static) — Hard-coded namespace in a template: use {{ .Release.Namespace }}
+charts/webapp/templates/deployment.yaml:18 HR005 (static) — Missing resource requests/limits: give resources sensible defaults in values.yaml
+charts/webapp/templates/deployment.yaml:18 HR009 (static) — Missing readiness/liveness probe: add readiness and liveness probes
+charts/webapp/templates/deployment.yaml:20 HR006 (static) — Image tag latest or not pinned: default the tag to .Chart.AppVersion, or pin a digest
+charts/webapp/templates/deployment.yaml:22 HR003 (static) — Container not hardened (restricted profile): set the listed securityContext fields (values.yaml securityContext defaults)
+charts/webapp/templates/deployment.yaml:23 HR002 (static) — Privileged container: drop privileged; add only the capabilities the workload needs
+charts/webapp/templates/ingress.yaml:2 HR012 (static) — Removed Kubernetes API version: move to the current API version
+charts/webapp/templates/ingress.yaml:7 HR020 (static) — Ingress/Route without TLS: add a tls section
+charts/webapp/templates/service.yaml:8 HR013 (static) — Service exposed outside the cluster: use ClusterIP behind an Ingress/Route unless intended
+charts/webapp/values.yaml HR019 (static) — No values.schema.json: add a values.schema.json
+charts/webapp/values.yaml:15 HR001 (static) — Hard-coded secret: remove the value, rotate it, and reference an existing Secret (existingSecret)
+deploy/rbac.yaml:14 HR011 (static) — Over-broad RBAC: list only the resources and verbs needed
+Could not fix (1)
+charts/webapp/templates/deployment.yaml:28 llm:secret-in-env (llm) — reverted: the chart stopped rendering (parse error at (webapp/templates/deployment.yaml:36): unexpected EOF)
+Problems
+charts/webapp/templates/deployment.yaml: the chart stopped rendering (parse error at (webapp/templates/deployment.yaml:36): unexpected EOF); all changes to it reverted
+Diff · 1 file
+charts/webapp/templates/service.yaml
++1 −1
+@@ -10,4 +10,4 @@
+     - port: {{ .Values.service.port }}
+       targetPort: http
+   selector:
+-    app: webapp
++    {{- include "webapp.selectorLabels" . | nindent 4 }}

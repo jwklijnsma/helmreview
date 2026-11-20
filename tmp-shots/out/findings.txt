@@ -1,0 +1,139 @@
+helmreview
+v0.1.2
+Ollama 0.12.6
+qwen2.5-coder:14b
+▾
+helm v3.22.1
+Jobs
+Upload ZIP for review
+or drop it on the page · max 100 MB
+REPOSITORIES
+platform-charts
+main · 18 findings · just now
+tenant-apps
+main · not scanned yet
+platform-charts
+⎇ main
+702c719 webapp chart and raw manifests
+clean
+model qwen2.5-coder:14b
+/srv/charts/platform-charts
+Scan
+Preview fixes
+Apply fixes
+Options
+· defaults from .helmreview.yml
+Scan · Finished
+0s · just now
+Log
+All jobs
+findings at or above the fail-on level
+↓ Report (Markdown)
+↓ Report (JSON)
+↓ Report (SARIF)
+Findings18
+Fixes
+Notes8
+Downloads3
+1
+critical
+5
+high
+2
+medium
+7
+low
+3
+info
+2 units · scanned just now
+model qwen2.5-coder:14b · 0s
+All
+HR checks
+helm lint
+Model
+By file
+By rule
+charts/webapp/templates/deployment.yaml
+7 findings
+critical
+L23
+HR002HR
+Deployment release-name-webapp, container webapp runs privileged: full access to the node.
+high
+L28
+llm:secret-in-envmodel
+The database password is rendered into a plain env value.
+medium
+L20
+HR006HR
+Deployment release-name-webapp, container webapp uses image 'registry.example.com/webapp:latest' (latest); what runs changes without a chart change.
+low
+L5
+HR014HR
+Namespace 'production' is hard-coded; the chart ignores `helm install --namespace` / the Argo CD destination namespace.
+low
+L18
+HR005HR
+Deployment release-name-webapp, container webapp has no requests.cpu, requests.memory, limits.memory.
+low
+L18
+HR009HR
+Deployment release-name-webapp, container webapp has no readinessProbe or livenessProbe.
+low
+L22
+HR003HR
+Deployment release-name-webapp, container webapp is not hardened; missing runAsNonRoot: true, readOnlyRootFilesystem: true, capabilities.drop: [ALL], seccompProfile: RuntimeDefault.
+charts/webapp/templates/ingress.yaml
+3 findings
+high
+L2
+HR012HR
+Ingress release-name-webapp uses networking.k8s.io/v1beta1, removed in Kubernetes 1.22.
+low
+—
+helm-lint:warninghelm-lint
+networking.k8s.io/v1beta1 Ingress is deprecated in v1.19+, unavailable in v1.22+; use networking.k8s.io/v1 Ingress
+low
+L7
+HR020HR
+Ingress release-name-webapp has no tls section; traffic is plain HTTP unless something in front terminates TLS.
+charts/webapp/templates/service.yaml
+2 findings
+high
+L13
+llm:selector-label-mismatchmodel
+The Service selects app: webapp, but the pods only carry the app.kubernetes.io/* selector labels, so it has no endpoints.
+info
+L8
+HR013HR
+Service release-name-webapp is of type NodePort and reachable from outside the cluster.
+charts/webapp/values.yaml
+2 findings
+high
+L15
+HR001HR
+Hard-coded secret in values: database.password = Su***
+info
+—
+HR019HR
+The chart has no values.schema.json, so typos and wrong types in values are not caught at install time.
+deploy/rbac.yaml
+1 finding
+high
+L14
+HR011HR
+ClusterRoleBinding deployer-admin binds cluster-admin.
+charts/webapp/Chart.yaml
+3 findings
+medium
+L10
+HR018HR
+Dependency 'redis' comes from a plain-HTTP repository.
+low
+L9
+HR017HR
+Dependency 'redis' is not pinned to one version (>=17.0.0); builds are not reproducible.
+info
+—
+helm-lint:iconhelm-lint
+icon is recommended

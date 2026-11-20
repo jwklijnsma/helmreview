@@ -1,0 +1,105 @@
+helmreview
+v0.1.2
+Ollama 0.12.6
+qwen2.5-coder:14b
+▾
+helm v3.22.1
+Jobs
+Upload ZIP for review
+or drop it on the page · max 100 MB
+REPOSITORIES
+platform-charts
+main · 18 findings · just now
+tenant-apps
+main · 18 findings · just now
+tenant-apps
+⎇ main
+0c5b531 tenant apps
+clean
+model qwen2.5-coder:14b
+/srv/charts/tenant-apps
+Scan
+Preview fixes
+Apply fixes
+Options
+· defaults from .helmreview.yml
+Scan · Finished
+0s · just now
+Log
+All jobs
+findings at or above the fail-on level
+↓ Report (Markdown)
+↓ Report (JSON)
+↓ Report (SARIF)
+Findings18
+Fixes
+Notes8
+Downloads3
+No fix run yet
+
+“Preview fixes” shows what helmreview would change without touching anything.
+
+Background jobs
+✕
+
+Jobs run on the server one after another and keep going when you close this page.
+
+FINISHED
+Scan
+tenant-apps
+findings at or above the fail-on level · 0s · just now
+Hide log
+↓ report.md
+↓ report.json
+↓ report.sarif
+$ helmreview scan tenant-apps --format=md,json,sarif
+helmreview 0.1.2: tenant-apps — 2 unit(s): chart 1, manifests 1
+helm lint on 1 chart(s)…
+Static checks on 2 unit(s) (rendering charts with helm template)…
+note: charts/webapp: dependencies are not in charts/ (run `helm dependency build`); rendered the chart without them
+LLM review: 8 file(s), one request each to qwen2.5-coder:14b @ http://127.0.0.1:36137
+  [1/8] ✓ charts/webapp/Chart.yaml 0s
+  [2/8] ✓ charts/webapp/templates/NOTES.txt 0s
+  [3/8] ✓ charts/webapp/templates/_helpers.tpl 0s
+  [4/8] ✓ charts/webapp/templates/deployment.yaml 0s — 1 finding(s)
+  [5/8] ✓ charts/webapp/templates/ingress.yaml 0s
+  [6/8] ✓ charts/webapp/templates/service.yaml 0s — 1 finding(s)
+  [7/8] ✓ charts/webapp/values.yaml 0s
+  [8/8] ✓ deploy/rbac.yaml 0s
+Results: 🟥 critical 1  🟧 high 5  🟨 medium 2  🟦 low 7  ⬜ info 3
+  🟥 charts/webapp/templates/deployment.yaml:23  [HR002] Deployment release-name-webapp, container webapp runs privileged: full access to the node.
+  🟧 charts/webapp/templates/deployment.yaml:28  [llm:secret-in-env] The database password is rendered into a plain env value.
+  🟧 charts/webapp/templates/ingress.yaml:2  [HR012] Ingress release-name-webapp uses networking.k8s.io/v1beta1, removed in Kubernetes 1.22.
+  🟧 charts/webapp/templates/service.yaml:13  [llm:selector-label-mismatch] The Service selects app: webapp, but the pods only carry the app.kubernetes.io/* selector labels, so it has no
+  🟧 charts/webapp/values.yaml:15  [HR001] Hard-coded secret in values: database.password = Su***
+  🟧 deploy/rbac.yaml:14  [HR011] ClusterRoleBinding deployer-admin binds cluster-admin.
+  🟨 charts/webapp/Chart.yaml:10  [HR018] Dependency 'redis' comes from a plain-HTTP repository.
+  🟨 charts/webapp/templates/deployment.yaml:20  [HR006] Deployment release-name-webapp, container webapp uses image 'registry.example.com/webapp:latest' (latest); wha
+  🟦 charts/webapp/Chart.yaml:9  [HR017] Dependency 'redis' is not pinned to one version (>=17.0.0); builds are not reproducible.
+  🟦 charts/webapp/templates/deployment.yaml:5  [HR014] Namespace 'production' is hard-coded; the chart ignores `helm install --namespace` / the Argo CD destination n
+  🟦 charts/webapp/templates/deployment.yaml:18  [HR005] Deployment release-name-webapp, container webapp has no requests.cpu, requests.memory, limits.memory.
+  🟦 charts/webapp/templates/deployment.yaml:18  [HR009] Deployment release-name-webapp, container webapp has no readinessProbe or livenessProbe.
+  🟦 charts/webapp/templates/deployment.yaml:22  [HR003] Deployment release-name-webapp, container webapp is not hardened; missing runAsNonRoot: true, readOnlyRootFile
+  🟦 charts/webapp/templates/ingress.yaml  [helm-lint:warning] networking.k8s.io/v1beta1 Ingress is deprecated in v1.19+, unavailable in v1.22+; use networking.k8s.io/v1 Ing
+  🟦 charts/webapp/templates/ingress.yaml:7  [HR020] Ingress release-name-webapp has no tls section; traffic is plain HTTP unless something in front terminates TLS
+  ⬜ charts/webapp/Chart.yaml  [helm-lint:icon] icon is recommended
+  ⬜ charts/webapp/templates/service.yaml:8  [HR013] Service release-name-webapp is of type NodePort and reachable from outside the cluster.
+  ⬜ charts/webapp/values.yaml  [HR019] The chart has no values.schema.json, so typos and wrong types in values are not caught at install time.
+Report: /srv/charts/tenant-apps/.helmreview/report.md
+Report: /srv/charts/tenant-apps/.helmreview/report.json
+Report: /srv/charts/tenant-apps/.helmreview/report.sarif
+Done in 0.1s
+[exit 1]
+Fix preview
+platform-charts
+completed · 0s · just now
+Log
+↓ fix.patch
+↓ fix-report.md
+Scan
+platform-charts
+findings at or above the fail-on level · 0s · just now
+Log
+↓ report.md
+↓ report.json
+↓ report.sarif
