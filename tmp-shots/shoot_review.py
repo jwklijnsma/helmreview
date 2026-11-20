@@ -28,7 +28,7 @@ def no_toasts(pg):
 def shot(pg, name, **kw):
     pg.wait_for_timeout(900)
     no_toasts(pg)
-    pg.add_style_tag(content=".toasts{display:none!important}")
+    pg.evaluate("document.querySelectorAll('.toasts').forEach(e => e.style.setProperty('display', 'none', 'important'))")
     pg.screenshot(path=out / f"{name}.png", **kw)
     (out / f"{name}.txt").write_text(pg.inner_text("body"))
 
