@@ -28,6 +28,8 @@ No code leaves your network, and `helm` never talks to a cluster.
 
 </div>
 
+[![The helmreview web UI](assets/screenshots/findings.png){ loading=lazy }](assets/screenshots/findings.png)
+
 ## Three layers
 
 | Layer | What it finds |

@@ -8,6 +8,8 @@ helmreview serve --root ~/git/infra --root ~/git/platform --open
 It prints a link with an access token (`http://localhost:8766/?token=…`). Open
 it once; the token becomes a cookie.
 
+[![The helmreview web UI: findings of a scan, by severity and source](../assets/screenshots/findings.png){ loading=lazy }](../assets/screenshots/findings.png)
+
 ## What you can do
 
 - **Scan** a repository, with the same options as the CLI: diff mode, only some
@@ -31,6 +33,22 @@ it once; the token becomes a cookie.
 - **Download** the results: every finished job offers its files (fixed ZIP,
   `fix.patch`, fix report, report as Markdown, JSON or SARIF), and each repo has
   a **Downloads** tab with the latest ones.
+
+=== "A model finding"
+
+    [![A model finding with its suggested fix, confidence and the code around it](../assets/screenshots/finding-detail.png){ loading=lazy }](../assets/screenshots/finding-detail.png)
+
+=== "Fix preview"
+
+    [![The fix report of a preview: what was fixed, what needs a human](../assets/screenshots/fixes.png){ loading=lazy }](../assets/screenshots/fixes.png)
+
+=== "Diff"
+
+    [![The diff of a fix preview](../assets/screenshots/fix-diff.png){ loading=lazy }](../assets/screenshots/fix-diff.png)
+
+=== "Background jobs"
+
+    [![The jobs panel: one scan running, finished jobs with their downloads](../assets/screenshots/jobs.png){ loading=lazy }](../assets/screenshots/jobs.png)
 
 ## How jobs run
 

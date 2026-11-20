@@ -44,6 +44,8 @@ The HR findings are listed in the fix report as **needs a human**, with what to
 do: they touch values and defaults that are yours to decide (resources, probes,
 security context, image tags, …). `--no-static-fix` leaves them out of the report.
 
+[![A fix preview in the web UI: the fix report and the diff](../assets/screenshots/fix-diff.png){ loading=lazy }](../assets/screenshots/fix-diff.png)
+
 ## What you get
 
 Work happens in a scratch copy. Nothing is committed.
