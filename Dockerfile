@@ -20,7 +20,7 @@ ARG PYTHON_VERSION=3.12
 # The official release binary, checked against its published sha256.
 FROM python:${PYTHON_VERSION}-slim AS helm
 # renovate: datasource=github-releases depName=helm/helm
-ARG HELM_VERSION=4.3.1
+ARG HELM_VERSION=4.3.2
 ARG TARGETARCH
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
